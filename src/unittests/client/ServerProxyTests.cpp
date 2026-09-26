@@ -12,6 +12,7 @@
 #include "client/ServerProxy.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/ProtocolTypes.h"
+#include "deskflow/ipc/CoreIpcServer.h"
 #include "io/IStream.h"
 
 #include <QTest>
@@ -272,6 +273,9 @@ void ServerProxyTests::initTestCase()
 {
   (void)testAppUtil();
   m_log.setFilter(LogLevel::Level::Debug);
+
+  // clipboard sends report to the GUI over IPC, which needs a server instance; it never listens
+  new deskflow::core::ipc::CoreIpcServer(this);
 }
 
 void ServerProxyTests::handleKeepAliveAlarm_timeout_queuesDisconnectRequest()

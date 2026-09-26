@@ -12,6 +12,8 @@
 #include <deque>
 #include <string>
 
+#include <QString>
+
 class ClipboardChunk;
 class IEventQueue;
 
@@ -39,7 +41,7 @@ them.  Waiting for the drain bounds that buffer to roughly one chunk.
 class StreamChunker
 {
 public:
-  StreamChunker(IEventQueue *events, void *eventTarget);
+  StreamChunker(IEventQueue *events, void *eventTarget, const QString &peerName);
   ~StreamChunker();
 
   StreamChunker(StreamChunker const &) = delete;
@@ -93,6 +95,7 @@ private:
 
   IEventQueue *m_events = nullptr;
   void *m_eventTarget = nullptr;
+  QString m_peerName;
   std::deque<Transfer> m_transfers;
   bool m_sending = false;
   bool m_inFlight = false;

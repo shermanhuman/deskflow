@@ -11,6 +11,7 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ipc/CoreIpc.h"
 
 #include <memory>
 
@@ -34,7 +35,10 @@ constexpr size_t g_chunkSize = 32 * 1024;
 
 } // namespace
 
-StreamChunker::StreamChunker(IEventQueue *events, void *eventTarget) : m_events(events), m_eventTarget(eventTarget)
+StreamChunker::StreamChunker(IEventQueue *events, void *eventTarget, const QString &peerName)
+    : m_events(events),
+      m_eventTarget(eventTarget),
+      m_peerName(peerName)
 {
   // do nothing
 }
@@ -116,6 +120,9 @@ ClipboardChunk *StreamChunker::nextChunk()
   // first message declares the total size
   if (!transfer.startSent) {
     transfer.startSent = true;
+    ipcSendToClient(
+        QStringLiteral("clipboardSending"), QStringLiteral("%1,%2").arg(transfer.data.size()).arg(m_peerName)
+    );
     return ClipboardChunk::start(transfer.id, transfer.sequence, std::to_string(transfer.data.size()));
   }
 
@@ -130,6 +137,7 @@ ClipboardChunk *StreamChunker::nextChunk()
   // and finally the end marker
   auto *chunk = ClipboardChunk::end(transfer.id, transfer.sequence);
   LOG_DEBUG("sent clipboard %d size=%zu", transfer.id, transfer.data.size());
+  ipcSendToClient(QStringLiteral("clipboardSent"), m_peerName);
   m_transfers.pop_front();
   return chunk;
 }

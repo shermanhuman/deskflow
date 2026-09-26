@@ -12,6 +12,7 @@ class StreamChunkerTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:
+  void initTestCase();
   // Test are run in order top to bottom
   void sendClipboardPostsOnlyFirstChunk();
   void nextChunkWaitsForStreamFlush();

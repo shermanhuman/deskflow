@@ -10,6 +10,7 @@
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ProtocolUtil.h"
 #include "deskflow/StreamChunker.h"
+#include "deskflow/ipc/CoreIpc.h"
 #include "io/IStream.h"
 #include "server/Server.h"
 
@@ -20,7 +21,7 @@
 ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *stream, Server *server, IEventQueue *events)
     : ClientProxy1_5(name, stream, server, events),
       m_events(events),
-      m_clipboardStreamer(events, this)
+      m_clipboardStreamer(events, this, QString::fromStdString(name))
 {
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
     if (m_clipboardStreamer.takeSkippedChunk()) {
@@ -74,6 +75,9 @@ bool ClientProxy1_6::recvClipboard()
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
     LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    ipcSendToClient(
+        QStringLiteral("clipboardReceiving"), QStringLiteral("%1,%2").arg(size).arg(QString::fromStdString(getName()))
+    );
   } else if (r == TransferState::Finished) {
     LOG(
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%zu", getName().c_str(), id, seq,
@@ -84,6 +88,7 @@ bool ClientProxy1_6::recvClipboard()
     m_clipboard[id].m_sequenceNumber = seq;
     m_clipboardDataCached.clear();
     m_clipboardDataCached.shrink_to_fit();
+    ipcSendToClient(QStringLiteral("clipboardReceived"), QString::fromStdString(getName()));
 
     // notify
     auto *info = new ClipboardInfo;

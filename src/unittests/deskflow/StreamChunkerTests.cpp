@@ -9,6 +9,7 @@
 #include "MockEventQueue.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/StreamChunker.h"
+#include "deskflow/ipc/CoreIpcServer.h"
 #include "io/IStream.h"
 
 #include <cstring>
@@ -199,10 +200,16 @@ synchronous loop, so a large clipboard put the whole transfer in front of any
 input event and keep-alive reply that followed it.  Starting a transfer must
 post exactly one chunk.
 */
+void StreamChunkerTests::initTestCase()
+{
+  // clipboard sends report to the GUI over IPC, which needs a server instance; it never listens
+  new deskflow::core::ipc::CoreIpcServer(this);
+}
+
 void StreamChunkerTests::sendClipboardPostsOnlyFirstChunk()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(makeData(s_largeSize), 0, 0);
 
@@ -221,7 +228,7 @@ for all of it to drain.  The next chunk must wait for StreamOutputFlushed.
 void StreamChunkerTests::nextChunkWaitsForStreamFlush()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(makeData(s_largeSize), 0, 0);
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
@@ -237,7 +244,7 @@ void StreamChunkerTests::nextChunkWaitsForStreamFlush()
 void StreamChunkerTests::staleFlushWhileChunkInFlightIsIgnored()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(makeData(s_largeSize), 0, 0);
 
@@ -253,7 +260,7 @@ void StreamChunkerTests::staleFlushWhileChunkInFlightIsIgnored()
 void StreamChunkerTests::chunksAreEmittedOneAtATime()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(makeData(s_largeSize), 0, 0);
   const auto drained = drain(chunker, queue);
@@ -283,7 +290,7 @@ void StreamChunkerTests::chunksAreEmittedOneAtATime()
 void StreamChunkerTests::transferRoundTripsData()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   const std::string data = makeData(s_largeSize + 7); // deliberately not a chunk multiple
   chunker.sendClipboard(data, 1, 42);
@@ -304,7 +311,7 @@ void StreamChunkerTests::transferRoundTripsData()
 void StreamChunkerTests::emptyClipboardSendsStartAndEnd()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(std::string(), 0, 0);
   const auto drained = drain(chunker, queue);
@@ -320,7 +327,7 @@ void StreamChunkerTests::emptyClipboardSendsStartAndEnd()
 void StreamChunkerTests::queuedTransfersDoNotInterleave()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   const std::string first = makeData(s_largeSize);
   const std::string second = makeData(2048);
@@ -362,7 +369,7 @@ void StreamChunkerTests::queuedTransfersDoNotInterleave()
 void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   // clipboard 0 is on the wire; clipboard 1 is copied three times meanwhile
   chunker.sendClipboard(makeData(s_largeSize), 0, 1);
@@ -396,7 +403,7 @@ void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
 void StreamChunkerTests::newerCopyRestartsTransferOnTheWire()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   // clipboard 0 is part way through a large transfer when it's copied again
   chunker.sendClipboard(makeData(s_largeSize), 0, 1);
@@ -444,7 +451,7 @@ void StreamChunkerTests::newerCopyRestartsTransferOnTheWire()
 void StreamChunkerTests::cancelStopsTransfer()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr);
+  StreamChunker chunker(&queue, nullptr, {});
 
   chunker.sendClipboard(makeData(s_largeSize), 0, 0);
   chunker.onChunkWritten();
@@ -461,7 +468,7 @@ void StreamChunkerTests::cancelStopsTransfer()
 void StreamChunkerTests::sendRemainingWritesInFlightChunkFirst()
 {
   HoldingEventQueue queue;
-  StreamChunker chunker(&queue, this);
+  StreamChunker chunker(&queue, this, {});
   const std::string data(70000, 'x');
 
   chunker.sendClipboard(data, 0, 7);
@@ -489,7 +496,7 @@ void StreamChunkerTests::sendRemainingWritesInFlightChunkFirst()
 void StreamChunkerTests::sendRemainingWithNothingQueuedWritesNothing()
 {
   HoldingEventQueue queue;
-  StreamChunker chunker(&queue, this);
+  StreamChunker chunker(&queue, this, {});
 
   BufferWriteStream written;
   chunker.sendRemaining(&written);
