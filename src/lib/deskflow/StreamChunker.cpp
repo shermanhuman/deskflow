@@ -120,6 +120,7 @@ ClipboardChunk *StreamChunker::nextChunk()
   // first message declares the total size
   if (!transfer.startSent) {
     transfer.startSent = true;
+    transfer.sinceStart.start();
     ipcSendToClient(
         QStringLiteral("clipboardSending"), QStringLiteral("%1,%2").arg(transfer.data.size()).arg(m_peerName)
     );
@@ -136,7 +137,8 @@ ClipboardChunk *StreamChunker::nextChunk()
 
   // and finally the end marker
   auto *chunk = ClipboardChunk::end(transfer.id, transfer.sequence);
-  LOG_DEBUG("sent clipboard %d size=%zu", transfer.id, transfer.data.size());
+  const auto description = ClipboardChunk::describeTransfer(transfer.data.size(), transfer.sinceStart.elapsed());
+  LOG_DEBUG("sent clipboard %d: %s", transfer.id, description.constData());
   ipcSendToClient(QStringLiteral("clipboardSent"), m_peerName);
   m_transfers.pop_front();
   return chunk;

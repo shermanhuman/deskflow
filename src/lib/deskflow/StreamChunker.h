@@ -12,6 +12,7 @@
 #include <deque>
 #include <string>
 
+#include <QElapsedTimer>
 #include <QString>
 
 class ClipboardChunk;
@@ -87,6 +88,7 @@ private:
     uint32_t sequence = 0;
     size_t offset = 0;
     bool startSent = false;
+    QElapsedTimer sinceStart;
   };
 
   void pumpOne();
