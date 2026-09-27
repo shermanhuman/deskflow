@@ -13,6 +13,8 @@
 #include <assert.h>
 #include <vector>
 
+#include <QLocale>
+
 //
 // IClipboard
 //
@@ -196,4 +198,12 @@ std::optional<IClipboard::Format> IClipboard::sourceToSend(Format format, const 
     source = Format::Bitmap;
   }
   return source;
+}
+
+QByteArray IClipboard::formatSize(size_t bytes)
+{
+  return QLocale::c()
+      .formattedDataSize(static_cast<qint64>(bytes), 1, QLocale::DataSizeTraditionalFormat)
+      .toLower()
+      .toUtf8();
 }

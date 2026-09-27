@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include <QByteArrayList>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QIODevice>
 #include <QList>
@@ -259,6 +260,8 @@ void PortalClipboard::serveSelectionTransfer(EiClipboard *cache, XdpSession *ses
     return;
   }
 
+  QElapsedTimer sinceStart;
+  sinceStart.start();
   bool served = false;
   qint64 written = 0;
   {
@@ -269,10 +272,11 @@ void PortalClipboard::serveSelectionTransfer(EiClipboard *cache, XdpSession *ses
   }
 
   xdp_session_selection_write_done(session, serial, served);
+  const auto transfer = ClipboardChunk::describeTransfer(static_cast<size_t>(written), sinceStart.elapsed());
   if (served)
-    LOG_DEBUG("clipboard selection transfer complete, bytes: %lld", static_cast<long long>(written));
+    LOG_DEBUG("clipboard selection transfer complete: %s", transfer.constData());
   else
-    LOG_WARN("clipboard selection transfer failed, bytes sent: %lld", static_cast<long long>(written));
+    LOG_WARN("clipboard selection transfer failed, sent: %s", transfer.constData());
 }
 
 std::optional<QByteArray> PortalClipboard::readFormat(

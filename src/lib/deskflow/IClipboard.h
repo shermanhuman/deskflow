@@ -14,6 +14,8 @@
 #include <optional>
 #include <string>
 
+#include <QByteArray>
+
 //! Clipboard interface
 /*!
 This interface defines the methods common to all clipboards.
@@ -177,6 +179,8 @@ public:
 
   //! Which \p available format to read to send \p format: raw pixels are only ever read to send a png
   static std::optional<Format> sourceToSend(Format format, const std::function<bool(Format)> &available);
+
+  static QByteArray formatSize(size_t bytes);
 
   //@}
 

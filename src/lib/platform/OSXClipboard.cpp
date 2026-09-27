@@ -109,7 +109,8 @@ void OSXClipboard::add(Format format, const std::string &data)
   if (m_pboard == nullptr)
     return;
 
-  LOG_DEBUG("add %d bytes to clipboard format: %d", data.size(), format);
+  const auto size = formatSize(data.size());
+  LOG_DEBUG("adding to clipboard, format: %d, size: %s", format, size.constData());
   if (format == IClipboard::Format::Text) {
     LOG_DEBUG("format of data to be added to clipboard was kText");
   } else if (format == IClipboard::Format::Bitmap) {
@@ -141,7 +142,7 @@ void OSXClipboard::add(Format format, const std::string &data)
         }
 
         CFRelease(dataRef);
-        LOG_DEBUG("added %d bytes to clipboard format: %d", data.size(), format);
+        LOG_DEBUG("added to clipboard, format: %d, size: %s", format, size.constData());
         added = true;
       }
     }
