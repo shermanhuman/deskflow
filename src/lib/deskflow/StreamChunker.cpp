@@ -42,6 +42,16 @@ void StreamChunker::sendClipboard(std::string data, ClipboardID id, uint32_t seq
   }
 }
 
+void StreamChunker::sendRemaining()
+{
+  if (m_sending) {
+    LOG_DEBUG("sending the rest of clipboard %d ahead of input", m_currentId);
+  }
+  while (m_sending) {
+    sendNextChunk();
+  }
+}
+
 void StreamChunker::beginTransfer(ClipboardID id, Transfer transfer)
 {
   m_current = std::move(transfer);
