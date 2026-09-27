@@ -48,6 +48,8 @@ if(WIN32)
     MSWindowsClipboardHTMLConverter.h
     MSWindowsClipboardImageConverter.cpp
     MSWindowsClipboardImageConverter.h
+    MSWindowsClipboardRawConverter.cpp
+    MSWindowsClipboardRawConverter.h
     MSWindowsClipboardUTF16Converter.cpp
     MSWindowsClipboardUTF16Converter.h
     MSWindowsComputer.cpp
@@ -88,6 +90,8 @@ elseif(APPLE)
     OSXClipboardBMPConverter.h
     OSXClipboardHTMLConverter.cpp
     OSXClipboardHTMLConverter.h
+    OSXClipboardRawConverter.cpp
+    OSXClipboardRawConverter.h
     OSXClipboardTextConverter.cpp
     OSXClipboardTextConverter.h
     OSXClipboardUTF8Converter.cpp
@@ -137,6 +141,8 @@ elseif(UNIX)
       XWindowsClipboardBMPConverter.h
       XWindowsClipboardHTMLConverter.cpp
       XWindowsClipboardHTMLConverter.h
+      XWindowsClipboardRawConverter.cpp
+      XWindowsClipboardRawConverter.h
       XWindowsClipboardTextConverter.cpp
       XWindowsClipboardTextConverter.h
       XWindowsClipboardUCS2Converter.cpp
