@@ -15,6 +15,10 @@
 class ClipboardChunk;
 class IEventQueue;
 
+namespace deskflow {
+class IStream;
+}
+
 //! Paced clipboard transmitter
 /*!
 Splits clipboard data into chunks and emits them one at a time.
@@ -60,6 +64,17 @@ public:
   //! Discard all queued transfers
   void cancel();
 
+  //! Write all queued transfers to \p stream now, so a message written after them arrives after the clipboard
+  /*!
+  A chunk already posted as a ClipboardSending event is written first, and
+  that event is then skipped (see takeSkippedChunk()) so nothing is sent twice
+  or out of order.
+  */
+  void sendRemaining(deskflow::IStream *stream);
+
+  //! Returns true, once per chunk, for a ClipboardSending event already written by sendRemaining()
+  bool takeSkippedChunk();
+
 private:
   struct Transfer
   {
@@ -71,6 +86,7 @@ private:
   };
 
   void pumpOne();
+  ClipboardChunk *nextChunk();
   void postChunk(ClipboardChunk *chunk);
 
   IEventQueue *m_events = nullptr;
@@ -78,4 +94,6 @@ private:
   std::deque<Transfer> m_transfers;
   bool m_sending = false;
   bool m_inFlight = false;
+  ClipboardChunk *m_inFlightChunk = nullptr; // owned by its pending ClipboardSending event
+  int m_skippedChunks = 0;
 };

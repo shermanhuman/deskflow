@@ -22,6 +22,8 @@ private Q_SLOTS:
   void queuedTransfersDoNotInterleave();
   void newerCopySupersedesQueuedTransfer();
   void cancelStopsTransfer();
+  void sendRemainingWritesInFlightChunkFirst();
+  void sendRemainingWithNothingQueuedWritesNothing();
 
 private:
   Log m_log;
