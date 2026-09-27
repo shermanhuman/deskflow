@@ -433,6 +433,7 @@ bool MSWindowsComputer::getClipboard(ClipboardID, IClipboard *dst) const
   } else {
     MSWindowsClipboard src(m_window);
     Clipboard::copy(dst, &src);
+    src.logUnreadableFormats();
   }
   return true;
 }
@@ -1395,6 +1396,7 @@ void MSWindowsComputer::startClipboardRead()
   m_clipboardReader = std::thread([clipboard = m_readingClipboard.get(), window = m_window] {
     MSWindowsClipboard src(nullptr);
     Clipboard::copy(clipboard, &src);
+    src.logUnreadableFormats();
     PostMessage(window, kClipboardReadMessage, 0, 0);
   });
 }
