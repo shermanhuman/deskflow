@@ -23,6 +23,8 @@ private Q_SLOTS:
   void newerCopySupersedesQueuedTransfer();
   void newerCopyRestartsTransferOnTheWire();
   void cancelStopsTransfer();
+  void sendRemainingWritesInFlightChunkFirst();
+  void sendRemainingWithNothingQueuedWritesNothing();
 
 private:
   Log m_log;

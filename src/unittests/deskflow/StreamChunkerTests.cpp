@@ -9,8 +9,10 @@
 #include "MockEventQueue.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/StreamChunker.h"
+#include "io/IStream.h"
 
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -107,6 +109,85 @@ std::string makeData(size_t size)
 
 // large enough to span several chunks whatever the chunk size is tuned to
 constexpr size_t s_largeSize = 1024 * 1024;
+
+//! Event queue that keeps posted events alive, as the real queue does until they're dispatched
+class HoldingEventQueue : public MockEventQueue
+{
+public:
+  ~HoldingEventQueue() override
+  {
+    for (const auto &event : m_events) {
+      Event::deleteData(event);
+    }
+  }
+
+  void addEvent(Event &&event) override
+  {
+    m_events.push_back(std::move(event));
+  }
+
+  std::vector<Event> m_events;
+};
+
+//! Stream that records everything written to it
+class BufferWriteStream : public deskflow::IStream
+{
+public:
+  const std::string &str() const
+  {
+    return m_buffer;
+  }
+
+  void close() override
+  {
+  }
+
+  uint32_t read(void *, uint32_t) override
+  {
+    return 0;
+  }
+
+  void write(const void *buffer, uint32_t n) override
+  {
+    m_buffer.append(static_cast<const char *>(buffer), n);
+  }
+
+  void flush() override
+  {
+  }
+
+  void shutdownInput() override
+  {
+  }
+
+  void shutdownOutput() override
+  {
+  }
+
+  void *getEventTarget() const override
+  {
+    return const_cast<BufferWriteStream *>(this);
+  }
+
+  bool isReady() const override
+  {
+    return false;
+  }
+
+  uint32_t getSize() const override
+  {
+    return 0;
+  }
+
+private:
+  std::string m_buffer;
+};
+
+void writeChunk(BufferWriteStream &stream, ClipboardChunk *chunk)
+{
+  const std::unique_ptr<ClipboardChunk> owned(chunk);
+  ClipboardChunk::send(&stream, owned.get());
+}
 
 } // namespace
 
@@ -375,6 +456,46 @@ void StreamChunkerTests::cancelStopsTransfer()
   chunker.onStreamFlushed();
 
   QCOMPARE(queue.m_captured.size(), beforeCancel);
+}
+
+void StreamChunkerTests::sendRemainingWritesInFlightChunkFirst()
+{
+  HoldingEventQueue queue;
+  StreamChunker chunker(&queue, this);
+  const std::string data(70000, 'x');
+
+  chunker.sendClipboard(data, 0, 7);
+  QCOMPARE(queue.m_events.size(), size_t{1});
+
+  BufferWriteStream written;
+  chunker.sendRemaining(&written);
+
+  // the posted start chunk, then every data chunk and the end, in order
+  BufferWriteStream expected;
+  writeChunk(expected, ClipboardChunk::start(0, 7, std::to_string(data.size())));
+  writeChunk(expected, ClipboardChunk::data(0, 7, data.substr(0, 32768)));
+  writeChunk(expected, ClipboardChunk::data(0, 7, data.substr(32768, 32768)));
+  writeChunk(expected, ClipboardChunk::data(0, 7, data.substr(65536)));
+  writeChunk(expected, ClipboardChunk::end(0, 7));
+  QCOMPARE(written.str(), expected.str());
+
+  // the already-written start chunk's event is skipped once, and nothing more is posted
+  QVERIFY(chunker.takeSkippedChunk());
+  QVERIFY(!chunker.takeSkippedChunk());
+  chunker.onStreamFlushed();
+  QCOMPARE(queue.m_events.size(), size_t{1});
+}
+
+void StreamChunkerTests::sendRemainingWithNothingQueuedWritesNothing()
+{
+  HoldingEventQueue queue;
+  StreamChunker chunker(&queue, this);
+
+  BufferWriteStream written;
+  chunker.sendRemaining(&written);
+
+  QVERIFY(written.str().empty());
+  QVERIFY(!chunker.takeSkippedChunk());
 }
 
 QTEST_MAIN(StreamChunkerTests)

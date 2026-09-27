@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2013 - 2016 Synergy App Ltd
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
@@ -10,6 +11,8 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
+
+#include <memory>
 
 #include <algorithm>
 #include <string>
@@ -74,6 +77,7 @@ void StreamChunker::sendClipboard(std::string data, ClipboardID id, uint32_t seq
 void StreamChunker::onChunkWritten()
 {
   m_inFlight = false;
+  m_inFlightChunk = nullptr;
 }
 
 void StreamChunker::onStreamFlushed()
@@ -90,13 +94,21 @@ void StreamChunker::cancel()
   m_transfers.clear();
   m_sending = false;
   m_inFlight = false;
+  m_inFlightChunk = nullptr;
 }
 
 void StreamChunker::pumpOne()
 {
+  if (auto *chunk = nextChunk(); chunk != nullptr) {
+    postChunk(chunk);
+  }
+}
+
+ClipboardChunk *StreamChunker::nextChunk()
+{
   if (m_transfers.empty()) {
     m_sending = false;
-    return;
+    return nullptr;
   }
 
   Transfer &transfer = m_transfers.front();
@@ -104,26 +116,58 @@ void StreamChunker::pumpOne()
   // first message declares the total size
   if (!transfer.startSent) {
     transfer.startSent = true;
-    postChunk(ClipboardChunk::start(transfer.id, transfer.sequence, std::to_string(transfer.data.size())));
-    return;
+    return ClipboardChunk::start(transfer.id, transfer.sequence, std::to_string(transfer.data.size()));
   }
 
   // then the data, one chunk per iteration
   if (transfer.offset < transfer.data.size()) {
     const size_t size = std::min(g_chunkSize, transfer.data.size() - transfer.offset);
-    postChunk(ClipboardChunk::data(transfer.id, transfer.sequence, transfer.data.substr(transfer.offset, size)));
+    auto *chunk = ClipboardChunk::data(transfer.id, transfer.sequence, transfer.data.substr(transfer.offset, size));
     transfer.offset += size;
-    return;
+    return chunk;
   }
 
   // and finally the end marker
-  postChunk(ClipboardChunk::end(transfer.id, transfer.sequence));
+  auto *chunk = ClipboardChunk::end(transfer.id, transfer.sequence);
   LOG_DEBUG("sent clipboard %d size=%zu", transfer.id, transfer.data.size());
   m_transfers.pop_front();
+  return chunk;
+}
+
+void StreamChunker::sendRemaining(deskflow::IStream *stream)
+{
+  if (!m_sending) {
+    return;
+  }
+  LOG_DEBUG("sending the rest of the clipboard transfer ahead of input");
+
+  // the posted chunk goes first; its event is still queued, so the chunk is still alive
+  if (m_inFlight) {
+    ClipboardChunk::send(stream, m_inFlightChunk);
+    ++m_skippedChunks;
+    m_inFlight = false;
+    m_inFlightChunk = nullptr;
+  }
+
+  while (m_sending) {
+    if (const std::unique_ptr<ClipboardChunk> chunk(nextChunk()); chunk != nullptr) {
+      ClipboardChunk::send(stream, chunk.get());
+    }
+  }
+}
+
+bool StreamChunker::takeSkippedChunk()
+{
+  if (m_skippedChunks == 0) {
+    return false;
+  }
+  --m_skippedChunks;
+  return true;
 }
 
 void StreamChunker::postChunk(ClipboardChunk *chunk)
 {
   m_inFlight = true;
+  m_inFlightChunk = chunk;
   m_events->addEvent(Event(EventTypes::ClipboardSending, m_eventTarget, chunk));
 }
