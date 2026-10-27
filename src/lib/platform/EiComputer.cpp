@@ -8,6 +8,7 @@
 
 #include "platform/EiComputer.h"
 
+#include "arch/Arch.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "common/Constants.h"
@@ -97,6 +98,7 @@ EiComputer::~EiComputer()
   m_events->removeHandler(EventTypes::System, m_events->getSystemTarget());
 
   cancelIdleEmulationTimer();
+  cancelDeferredReleaseTimer();
 
   cleanupEi();
 
@@ -461,10 +463,60 @@ void EiComputer::enter()
     // while the cursor sits here with no relayed activity.
     fakeMouseMove(m_cursorX, m_cursorY);
   } else if (m_isPrimary) {
-    LOG_DEBUG("releasing input capture at x=%i y=%i", m_cursorX, m_cursorY);
-    m_portalInputCapture->release(m_cursorX, m_cursorY);
-    // no more button events once capture is released, so drop any held state
-    updateButtons();
+    const double now = Arch::time();
+    if (m_remoteClipboardPending && m_portalInputCapture->isActive()) {
+      LOG_DEBUG("deferring input capture release until remote clipboard arrives");
+      deferRelease(now + s_deferredReleaseTimeout);
+      m_releaseDeadline = now + s_deferredReleaseTimeout + s_claimSettleTimeout;
+      return;
+    }
+    if (m_claimSettledAt > now && m_portalInputCapture->isActive()) {
+      // re-entered right after a claim, which still needs its head start
+      LOG_DEBUG("deferring input capture release until clipboard claim settles");
+      deferRelease(m_claimSettledAt);
+      m_releaseDeadline = m_claimSettledAt;
+      return;
+    }
+    releaseCapture();
+  }
+}
+
+void EiComputer::releaseCapture()
+{
+  resetDeferredRelease();
+  LOG_DEBUG("releasing input capture at x=%i y=%i", m_cursorX, m_cursorY);
+  m_portalInputCapture->release(m_cursorX, m_cursorY);
+  // no more button events once capture is released, so drop any held state
+  updateButtons();
+}
+
+void EiComputer::deferRelease(double until)
+{
+  cancelDeferredReleaseTimer();
+  m_releaseDeferred = true;
+  m_deferredReleaseTimer = m_events->newOneShotTimer(std::max(0.0, until - Arch::time()), nullptr);
+  m_events->addHandler(EventTypes::Timer, m_deferredReleaseTimer, [this](const auto &) {
+    if (m_remoteClipboardPending) {
+      LOG_INFO("client clipboard did not arrive in time, it won't be pasteable here until the next switch");
+      m_remoteClipboardPending = false;
+    }
+    releaseCapture();
+  });
+}
+
+void EiComputer::resetDeferredRelease()
+{
+  cancelDeferredReleaseTimer();
+  m_releaseDeferred = false;
+  m_releaseDeadline = 0;
+}
+
+void EiComputer::cancelDeferredReleaseTimer()
+{
+  if (m_deferredReleaseTimer) {
+    m_events->removeHandler(EventTypes::Timer, m_deferredReleaseTimer);
+    m_events->deleteTimer(m_deferredReleaseTimer);
+    m_deferredReleaseTimer = nullptr;
   }
 }
 
@@ -477,14 +529,32 @@ void EiComputer::leave()
 {
   if (!m_isPrimary) {
     stopEmulating();
+  } else if (m_releaseDeferred) {
+    // left again before the release, so the capture is wanted after all
+    resetDeferredRelease();
   }
 
   m_isOnComputer = false;
 }
 
+static bool hasAnyFormat(const IClipboard *clipboard)
+{
+  bool found = false;
+  if (clipboard->open(0)) {
+    for (int i = 0; i < static_cast<int>(IClipboard::Format::TotalFormats) && !found; ++i)
+      found = clipboard->has(static_cast<IClipboard::Format>(i));
+    clipboard->close();
+  }
+  return found;
+}
+
 bool EiComputer::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
   if (!clipboard) {
+    // a client grabbed the clipboard; its data follows when it leaves
+    if (m_portalInputCapture && id == kClipboardClipboard && m_portalInputCapture->isClipboardEnabled()) {
+      m_remoteClipboardPending = true;
+    }
     return false;
   }
 
@@ -494,7 +564,25 @@ bool EiComputer::setClipboard(ClipboardID id, const IClipboard *clipboard)
     if (!targetClipboard) {
       return false;
     }
-    return IClipboard::copy(targetClipboard, clipboard);
+    const bool ok = IClipboard::copy(targetClipboard, clipboard);
+    // the advertised mime types must follow the data, e.g. an image replacing text;
+    // an empty clipboard is the server's placeholder after a grab, the data comes later
+    if (ok && id == kClipboardClipboard && hasAnyFormat(targetClipboard)) {
+      m_remoteClipboardPending = false;
+      if (!m_portalInputCapture->isActive()) {
+        LOG_INFO("client clipboard arrived after input capture was released, it won't be pasteable here");
+        return ok;
+      }
+      m_portalInputCapture->claimClipboard();
+      const double now = Arch::time();
+      m_claimSettledAt = now + s_claimSettleTimeout;
+      if (m_releaseDeferred) {
+        // give the claim a head start over the release, within the hold's deadline
+        LOG_DEBUG("clipboard claimed, releasing input capture shortly");
+        deferRelease(std::min(m_claimSettledAt, m_releaseDeadline));
+      }
+    }
+    return ok;
   }
 
   // Otherwise use our own clipboard
@@ -906,6 +994,11 @@ void EiComputer::onMotionEvent(ei_event *event)
   }
 
   if (m_isOnComputer) {
+    if (m_releaseDeferred) {
+      // the position is the entry point until the release; reporting it could
+      // switch straight back to the client we just left
+      return;
+    }
     LOG_DEBUG("event: motion on primary x=%i y=%i", m_cursorX, m_cursorY);
     sendEvent(EventTypes::PrimaryComputerMotionOnPrimary, MotionInfo::alloc(m_cursorX, m_cursorY));
     if (m_portalInputCapture->isActive()) {
@@ -1004,6 +1097,9 @@ void EiComputer::handleSystemEvent(const Event &)
       if (m_isPrimary) {
         LOG_DEBUG("re-allocating portal input capture connection and releasing active captures");
         if (m_portalInputCapture) {
+          resetDeferredRelease();
+          m_remoteClipboardPending = false;
+          m_claimSettledAt = 0;
           if (m_portalInputCapture->isActive()) {
             m_portalInputCapture->release();
           }

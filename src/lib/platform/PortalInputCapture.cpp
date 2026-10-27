@@ -256,6 +256,27 @@ void PortalInputCapture::claimClipboardOwnership([[maybe_unused]] XdpSession *se
 #endif
 }
 
+bool PortalInputCapture::isClipboardEnabled() const
+{
+#ifdef HAVE_LIBPORTAL_CLIPBOARD
+  return m_session && xdp_session_is_clipboard_enabled(xdp_input_capture_session_get_session(m_session));
+#else
+  return false;
+#endif
+}
+
+void PortalInputCapture::claimClipboard()
+{
+#ifdef HAVE_LIBPORTAL_CLIPBOARD
+  if (!isClipboardEnabled()) {
+    LOG_DEBUG("portal input capture clipboard not enabled on session, cannot claim");
+    return;
+  }
+  m_servingRemoteClipboard = true;
+  claimClipboardOwnership(xdp_input_capture_session_get_session(m_session));
+#endif
+}
+
 void PortalInputCapture::readClipboardSelection(XdpSession *session) const
 {
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
@@ -278,8 +299,10 @@ void PortalInputCapture::readClipboardSelection(XdpSession *session) const
 void PortalInputCapture::handleSelectionTransfer(XdpSession *session, const char *mimeType, uint32_t serial) const
 {
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
-  if (m_isActive) {
+  if (m_isActive && !m_servingRemoteClipboard) {
     LOG_DEBUG("skipping clipboard selection transfer, clipboard is active");
+    // the requester waits until the transfer is finished, so finish it as failed
+    xdp_session_selection_write_done(session, serial, false);
     return;
   }
   PortalClipboard::serveSelectionTransfer(m_clipboard, session, mimeType, serial);
@@ -738,6 +761,7 @@ void PortalInputCapture::handleActivated(
   }
   m_activationId = activationId;
   m_isActive = true;
+  m_servingRemoteClipboard = false;
 
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
   if (m_session) {

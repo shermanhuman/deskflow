@@ -135,6 +135,10 @@ private:
   void ensureEmulating() const;
   void stopEmulating() const;
   void cancelIdleEmulationTimer() const;
+  void releaseCapture();
+  void deferRelease(double until);
+  void cancelDeferredReleaseTimer();
+  void resetDeferredRelease();
   void updatePortalGlobalShortcuts();
 
   static void handleEiLogEvent(ei *ei, const ei_log_priority priority, const char *message, ei_log_context *)
@@ -159,6 +163,22 @@ private:
   // clipboard stuff
   EiClipboard *m_clipboard = nullptr;
   size_t m_maximumClipboardSize = INT_MAX;
+
+  // The portal only accepts a clipboard claim while input capture is active, but a
+  // client sends its clipboard after it leaves, i.e. after we would release. When a
+  // client has grabbed the clipboard, hold the capture until its data arrives.
+  bool m_remoteClipboardPending = false;
+  bool m_releaseDeferred = false;
+  EventQueueTimer *m_deferredReleaseTimer = nullptr;
+  // Hard limit for the current hold, so repeated clipboard updates can't extend it.
+  double m_releaseDeadline = 0;
+  // The last claim has a head start over any release until this time.
+  double m_claimSettledAt = 0;
+  // Long enough for a screenshot over a LAN, short enough not to be felt as lag.
+  static constexpr double s_deferredReleaseTimeout = 0.5;
+  // Gap between the claim and the release; the portal handles calls on worker
+  // threads and gives no ordering guarantee between them.
+  static constexpr double s_claimSettleTimeout = 0.05;
 
   std::vector<ei_device *> m_eiDevices;
 

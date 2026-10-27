@@ -17,6 +17,7 @@
 #include <libportal/inputcapture.h>
 #include <libportal/portal.h>
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <utility>
@@ -34,6 +35,10 @@ public:
 
   // Get the clipboard for the specified ID
   EiClipboard *getClipboard(ClipboardID id) const;
+  // Whether the session can share the clipboard at all
+  bool isClipboardEnabled() const;
+  // Advertise the cached clipboard (e.g. after a remote computer's clipboard arrives)
+  void claimClipboard();
   void enable();
   void disable();
   void release();
@@ -166,6 +171,9 @@ private:
 
   bool m_enabled = false;
   bool m_isActive = false;
+  // The cache holds a remote computer's clipboard that we claimed while active,
+  // so selection transfers can be served before the capture is released.
+  std::atomic<bool> m_servingRemoteClipboard = false;
   std::uint32_t m_activationId = 0;
 
   std::vector<XdpInputCapturePointerBarrier *> m_barriers;
