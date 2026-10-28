@@ -278,6 +278,40 @@ void StreamChunkerTests::queuedTransfersDoNotInterleave()
   QCOMPARE(secondData, second);
 }
 
+void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
+{
+  CapturingEventQueue queue;
+  StreamChunker chunker(&queue, nullptr);
+
+  // clipboard 0 is on the wire; clipboard 1 is copied three times meanwhile
+  chunker.sendClipboard(makeData(s_largeSize), 0, 1);
+  chunker.sendClipboard(std::string("first"), 1, 2);
+  chunker.sendClipboard(std::string("second"), 1, 3);
+  chunker.sendClipboard(std::string("third"), 1, 4);
+
+  const auto drained = drain(chunker, queue);
+  QVERIFY(drained.terminated);
+
+  size_t clipboardOneStarts = 0;
+  std::string clipboardOneData;
+  uint32_t clipboardOneSequence = 0;
+  for (const auto &chunk : drained.chunks) {
+    if (chunk.id != 1) {
+      continue;
+    }
+    clipboardOneSequence = chunk.sequence;
+    if (chunk.mark == ChunkType::DataStart) {
+      ++clipboardOneStarts;
+    } else if (chunk.mark == ChunkType::DataChunk) {
+      clipboardOneData += chunk.payload;
+    }
+  }
+
+  QCOMPARE(clipboardOneStarts, static_cast<size_t>(1));
+  QCOMPARE(clipboardOneData, std::string("third"));
+  QCOMPARE(clipboardOneSequence, static_cast<uint32_t>(4));
+}
+
 void StreamChunkerTests::cancelStopsTransfer()
 {
   CapturingEventQueue queue;

@@ -20,6 +20,7 @@ private Q_SLOTS:
   void transferRoundTripsData();
   void emptyClipboardSendsStartAndEnd();
   void queuedTransfersDoNotInterleave();
+  void newerCopySupersedesQueuedTransfer();
   void cancelStopsTransfer();
 
 private:

@@ -43,6 +43,16 @@ StreamChunker::~StreamChunker()
 
 void StreamChunker::sendClipboard(std::string data, ClipboardID id, uint32_t sequence)
 {
+  // a newer copy supersedes a queued one for the same clipboard; the transfer
+  // already on the wire (front, while sending) is left to finish
+  for (size_t i = m_sending ? 1 : 0; i < m_transfers.size(); ++i) {
+    if (m_transfers[i].id == id) {
+      m_transfers[i].data = std::move(data);
+      m_transfers[i].sequence = sequence;
+      return;
+    }
+  }
+
   Transfer transfer;
   transfer.data = std::move(data);
   transfer.id = id;
