@@ -29,6 +29,7 @@
 ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue *events)
     : m_client(client),
       m_stream(stream),
+      m_clipboardStreamer(events, this),
       m_events(events)
 {
   assert(m_client != nullptr);
@@ -44,6 +45,10 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
   });
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
     ClipboardChunk::send(m_stream, e.getDataObject());
+    m_clipboardStreamer.onChunkWritten();
+  });
+  m_events->addHandler(EventTypes::StreamOutputFlushed, m_stream->getEventTarget(), [this](const auto &) {
+    m_clipboardStreamer.onStreamFlushed();
   });
 
   // send heartbeat
@@ -52,9 +57,11 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
 
 ServerProxy::~ServerProxy()
 {
+  m_clipboardStreamer.cancel();
   setKeepAliveRate(-1.0);
   m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
   m_events->removeHandler(EventTypes::ClipboardSending, this);
+  m_events->removeHandler(EventTypes::StreamOutputFlushed, m_stream->getEventTarget());
 }
 
 void ServerProxy::resetKeepAliveAlarm()
@@ -367,7 +374,7 @@ void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
 
-  StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
+  m_clipboardStreamer.sendClipboard(std::move(data), id, m_seqNum);
 }
 
 void ServerProxy::flushCompressedMouse()

@@ -12,6 +12,7 @@
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/StreamChunker.h"
 
 class Client;
 class ClientInfo;
@@ -115,6 +116,7 @@ private:
   deskflow::IStream *m_stream = nullptr;
 
   uint32_t m_seqNum = 0;
+  StreamChunker m_clipboardStreamer;
 
   bool m_compressMouse = false;
   bool m_compressMouseRelative = false;
