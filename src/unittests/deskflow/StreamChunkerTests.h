@@ -21,6 +21,7 @@ private Q_SLOTS:
   void emptyClipboardSendsStartAndEnd();
   void queuedTransfersDoNotInterleave();
   void newerCopySupersedesQueuedTransfer();
+  void newerCopyRestartsTransferOnTheWire();
   void cancelStopsTransfer();
   void sendRemainingWritesInFlightChunkFirst();
   void sendRemainingWithNothingQueuedWritesNothing();
