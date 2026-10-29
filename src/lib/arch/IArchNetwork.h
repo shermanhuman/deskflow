@@ -235,6 +235,16 @@ public:
   */
   virtual bool setNoDelayOnSocket(ArchSocket, bool noDelay) = 0;
 
+  //! Limit how much unsent data the kernel holds for the socket
+  /*!
+  The socket is only reported writable while less than \c bytes are waiting
+  to be sent, so data written later isn't queued behind a full send buffer.
+  Does nothing where the platform has no such option.
+  */
+  virtual void setNotSentLowWatermarkOnSocket(ArchSocket, int bytes)
+  {
+  }
+
   //! Turn keep-alive on or off on socket
   /*!
   Set socket to use keep-alive (true) or not (false).

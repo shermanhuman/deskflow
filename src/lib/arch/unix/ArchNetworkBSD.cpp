@@ -419,6 +419,17 @@ bool ArchNetworkBSD::setNoDelayOnSocket(ArchSocket s, bool noDelay)
   return (oflag != 0);
 }
 
+void ArchNetworkBSD::setNotSentLowWatermarkOnSocket(ArchSocket s, int bytes)
+{
+  assert(s != nullptr);
+
+#if defined(TCP_NOTSENT_LOWAT)
+  if (setsockopt(s->m_fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, reinterpret_cast<optval_t *>(&bytes), sizeof(bytes)) == -1) {
+    throwError(errno);
+  }
+#endif
+}
+
 void ArchNetworkBSD::setKeepAliveOnSocket(ArchSocket s, bool keepAlive)
 {
   if (!s) {

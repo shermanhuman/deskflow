@@ -22,6 +22,9 @@
 
 static const std::size_t s_maxInputBufferSize = 1024 * 1024;
 
+// unsent bytes the kernel may hold; 16 KB had no throughput cost on 5 GHz Wi-Fi
+static const int s_notSentLowWatermark = 16 * 1024;
+
 //
 // TCPSocket
 //
@@ -286,6 +289,14 @@ void TCPSocket::init()
 
     // turn on keep-alive to avoid dead connections from lingering indefinitely
     ARCH->setKeepAliveOnSocket(m_socket, true);
+
+    // keep little unsent data in the kernel, so a newer clipboard or input isn't queued behind a full send buffer;
+    // only an optimisation, so a socket that refuses it is still usable
+    try {
+      ARCH->setNotSentLowWatermarkOnSocket(m_socket, s_notSentLowWatermark);
+    } catch (const ArchNetworkException &e) {
+      LOG_WARN("unable to limit unsent socket data: %s", e.what());
+    }
   } catch (const ArchNetworkException &e) {
     try {
       ARCH->closeSocket(m_socket);
