@@ -385,7 +385,7 @@ QVariant Settings::defaultValue(const QString &key)
     return 250;
 
   if (key == Server::ClipboardSize)
-    return 3; // 3 MiB
+    return 128; // 128 MiB
 
   return QVariant();
 }
