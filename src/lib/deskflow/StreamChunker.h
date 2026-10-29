@@ -45,9 +45,11 @@ public:
 
   //! Queue clipboard data for transmission
   /*!
-  Takes ownership of \p data.  Transfers are sent in the order queued.  If a
-  transfer for the same clipboard is already waiting (not yet started), it is
-  replaced, so a burst of copies sends only the latest contents.
+  Takes ownership of \p data.  Transfers are sent in the order queued.  A
+  newer copy of the same clipboard replaces the older one: a waiting transfer
+  is replaced, and one already on the wire restarts with a new start chunk
+  once the chunk already posted is written, so a burst of copies sends only
+  the latest contents.
   */
   void sendClipboard(std::string data, ClipboardID id, uint32_t sequence);
 

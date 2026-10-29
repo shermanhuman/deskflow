@@ -312,6 +312,54 @@ void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
   QCOMPARE(clipboardOneSequence, static_cast<uint32_t>(4));
 }
 
+void StreamChunkerTests::newerCopyRestartsTransferOnTheWire()
+{
+  CapturingEventQueue queue;
+  StreamChunker chunker(&queue, nullptr);
+
+  // clipboard 0 is part way through a large transfer when it's copied again
+  chunker.sendClipboard(makeData(s_largeSize), 0, 1);
+  for (int i = 0; i < 3; ++i) {
+    chunker.onChunkWritten();
+    chunker.onStreamFlushed();
+  }
+  chunker.sendClipboard(std::string("newer"), 0, 2);
+
+  const auto drained = drain(chunker, queue);
+  QVERIFY(drained.terminated);
+  QVERIFY(drained.onePerPump);
+
+  // a receiver starts over on each start chunk, so only what follows the last one counts
+  size_t starts = 0;
+  std::string afterLastStart;
+  bool ended = false;
+  for (const auto &chunk : drained.chunks) {
+    if (chunk.mark == ChunkType::DataStart) {
+      ++starts;
+      afterLastStart.clear();
+      ended = false;
+    } else if (chunk.mark == ChunkType::DataChunk) {
+      afterLastStart += chunk.payload;
+    } else if (chunk.mark == ChunkType::DataEnd) {
+      ended = true;
+      QCOMPARE(chunk.sequence, static_cast<uint32_t>(2));
+    }
+  }
+
+  QCOMPARE(starts, static_cast<size_t>(2));
+  QCOMPARE(afterLastStart, std::string("newer"));
+  QVERIFY(ended);
+
+  // the large transfer was cut short rather than sent in full
+  size_t largeBytes = 0;
+  for (const auto &chunk : drained.chunks) {
+    if (chunk.mark == ChunkType::DataChunk && chunk.sequence == 1) {
+      largeBytes += chunk.payload.size();
+    }
+  }
+  QVERIFY(largeBytes < s_largeSize);
+}
+
 void StreamChunkerTests::cancelStopsTransfer()
 {
   CapturingEventQueue queue;
