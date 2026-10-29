@@ -8,8 +8,8 @@
 
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardSender.h"
 #include "deskflow/ProtocolUtil.h"
-#include "deskflow/StreamChunker.h"
 #include "deskflow/ipc/CoreIpc.h"
 #include "io/IStream.h"
 #include "server/Server.h"
@@ -21,23 +21,23 @@
 ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *stream, Server *server, IEventQueue *events)
     : ClientProxy1_5(name, stream, server, events),
       m_events(events),
-      m_clipboardStreamer(events, this, QString::fromStdString(name))
+      m_clipboardSender(events, this, QString::fromStdString(name))
 {
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
-    if (m_clipboardStreamer.takeSkippedChunk()) {
+    if (m_clipboardSender.takeSkippedChunk()) {
       return;
     }
     ClipboardChunk::send(getStream(), e.getDataObject());
-    m_clipboardStreamer.onChunkWritten();
+    m_clipboardSender.onChunkWritten();
   });
   m_events->addHandler(EventTypes::StreamOutputFlushed, getStream()->getEventTarget(), [this](const auto &) {
-    m_clipboardStreamer.onStreamFlushed();
+    m_clipboardSender.onStreamFlushed();
   });
 }
 
 ClientProxy1_6::~ClientProxy1_6()
 {
-  m_clipboardStreamer.cancel();
+  m_clipboardSender.cancel();
   m_events->removeHandler(EventTypes::ClipboardSending, this);
   m_events->removeHandler(EventTypes::StreamOutputFlushed, getStream()->getEventTarget());
 }
@@ -53,13 +53,13 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
     std::string data = m_clipboard[id].m_clipboard.marshall();
     LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
 
-    m_clipboardStreamer.sendClipboard(std::move(data), id, 0);
+    m_clipboardSender.sendClipboard(std::move(data), id, 0);
   }
 }
 
 void ClientProxy1_6::finishClipboardTransfers()
 {
-  m_clipboardStreamer.sendRemaining(getStream());
+  m_clipboardSender.sendRemaining(getStream());
 }
 
 bool ClientProxy1_6::recvClipboard()

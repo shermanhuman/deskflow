@@ -22,10 +22,10 @@ create_test(
 )
 
 create_test(
-  NAME StreamChunkerTests
+  NAME ClipboardSenderTests
   DEPENDS app
   LIBS arch base io ${extra_libs}
-  SOURCE StreamChunkerTests.cpp
+  SOURCE ClipboardSenderTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
 )
 

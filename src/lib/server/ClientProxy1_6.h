@@ -7,7 +7,7 @@
 #pragma once
 
 #include "deskflow/ClipboardChunk.h"
-#include "deskflow/StreamChunker.h"
+#include "deskflow/ClipboardSender.h"
 #include "server/ClientProxy1_5.h"
 
 #include <string>
@@ -30,5 +30,5 @@ private:
   IEventQueue *m_events;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
-  StreamChunker m_clipboardStreamer;
+  ClipboardSender m_clipboardSender;
 };

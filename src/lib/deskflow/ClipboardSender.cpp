@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
-#include "deskflow/StreamChunker.h"
+#include "deskflow/ClipboardSender.h"
 
 #include "base/Event.h"
 #include "base/IEventQueue.h"
@@ -35,7 +35,7 @@ constexpr size_t g_chunkSize = 32 * 1024;
 
 } // namespace
 
-StreamChunker::StreamChunker(IEventQueue *events, void *eventTarget, const QString &peerName)
+ClipboardSender::ClipboardSender(IEventQueue *events, void *eventTarget, const QString &peerName)
     : m_events(events),
       m_eventTarget(eventTarget),
       m_peerName(peerName)
@@ -43,12 +43,12 @@ StreamChunker::StreamChunker(IEventQueue *events, void *eventTarget, const QStri
   // do nothing
 }
 
-StreamChunker::~StreamChunker()
+ClipboardSender::~ClipboardSender()
 {
   cancel();
 }
 
-void StreamChunker::sendClipboard(std::string data, ClipboardID id, uint32_t sequence)
+void ClipboardSender::sendClipboard(std::string data, ClipboardID id, uint32_t sequence)
 {
   // a newer copy supersedes the older one for the same clipboard; a transfer already on the wire
   // restarts, since a receiver starts over on a new start chunk
@@ -78,13 +78,13 @@ void StreamChunker::sendClipboard(std::string data, ClipboardID id, uint32_t seq
   }
 }
 
-void StreamChunker::onChunkWritten()
+void ClipboardSender::onChunkWritten()
 {
   m_inFlight = false;
   m_inFlightChunk = nullptr;
 }
 
-void StreamChunker::onStreamFlushed()
+void ClipboardSender::onStreamFlushed()
 {
   // a flush that was already queued before the last chunk was written is stale:
   // that chunk will produce its own flush once it drains
@@ -93,7 +93,7 @@ void StreamChunker::onStreamFlushed()
   }
 }
 
-void StreamChunker::cancel()
+void ClipboardSender::cancel()
 {
   m_transfers.clear();
   m_sending = false;
@@ -101,14 +101,14 @@ void StreamChunker::cancel()
   m_inFlightChunk = nullptr;
 }
 
-void StreamChunker::pumpOne()
+void ClipboardSender::pumpOne()
 {
   if (auto *chunk = nextChunk(); chunk != nullptr) {
     postChunk(chunk);
   }
 }
 
-ClipboardChunk *StreamChunker::nextChunk()
+ClipboardChunk *ClipboardSender::nextChunk()
 {
   if (m_transfers.empty()) {
     m_sending = false;
@@ -144,7 +144,7 @@ ClipboardChunk *StreamChunker::nextChunk()
   return chunk;
 }
 
-void StreamChunker::sendRemaining(deskflow::IStream *stream)
+void ClipboardSender::sendRemaining(deskflow::IStream *stream)
 {
   if (!m_sending) {
     return;
@@ -166,7 +166,7 @@ void StreamChunker::sendRemaining(deskflow::IStream *stream)
   }
 }
 
-bool StreamChunker::takeSkippedChunk()
+bool ClipboardSender::takeSkippedChunk()
 {
   if (m_skippedChunks == 0) {
     return false;
@@ -175,7 +175,7 @@ bool StreamChunker::takeSkippedChunk()
   return true;
 }
 
-void StreamChunker::postChunk(ClipboardChunk *chunk)
+void ClipboardSender::postChunk(ClipboardChunk *chunk)
 {
   m_inFlight = true;
   m_inFlightChunk = chunk;

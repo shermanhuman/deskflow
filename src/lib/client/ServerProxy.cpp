@@ -13,11 +13,11 @@
 #include "client/Client.h"
 #include "deskflow/Clipboard.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardSender.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
-#include "deskflow/StreamChunker.h"
 #include "deskflow/ipc/CoreIpc.h"
 #include "io/IStream.h"
 
@@ -31,7 +31,7 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
     : m_client(client),
       m_stream(stream),
       // the client's GUI names the server itself
-      m_clipboardStreamer(events, this, {}),
+      m_clipboardSender(events, this, {}),
       m_events(events)
 {
   assert(m_client != nullptr);
@@ -47,10 +47,10 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
   });
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
     ClipboardChunk::send(m_stream, e.getDataObject());
-    m_clipboardStreamer.onChunkWritten();
+    m_clipboardSender.onChunkWritten();
   });
   m_events->addHandler(EventTypes::StreamOutputFlushed, m_stream->getEventTarget(), [this](const auto &) {
-    m_clipboardStreamer.onStreamFlushed();
+    m_clipboardSender.onStreamFlushed();
   });
 
   // send heartbeat
@@ -59,7 +59,7 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
 
 ServerProxy::~ServerProxy()
 {
-  m_clipboardStreamer.cancel();
+  m_clipboardSender.cancel();
   setKeepAliveRate(-1.0);
   m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
   m_events->removeHandler(EventTypes::ClipboardSending, this);
@@ -376,7 +376,7 @@ void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
 
-  m_clipboardStreamer.sendClipboard(std::move(data), id, m_seqNum);
+  m_clipboardSender.sendClipboard(std::move(data), id, m_seqNum);
 }
 
 void ServerProxy::flushCompressedMouse()

@@ -8,7 +8,7 @@
 
 #include <QTest>
 
-class StreamChunkerTests : public QObject
+class ClipboardSenderTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:

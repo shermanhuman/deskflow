@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
-#include "StreamChunkerTests.h"
+#include "ClipboardSenderTests.h"
 
 #include "MockEventQueue.h"
 #include "deskflow/ClipboardChunk.h"
-#include "deskflow/StreamChunker.h"
+#include "deskflow/ClipboardSender.h"
 #include "deskflow/ipc/CoreIpcServer.h"
 #include "io/IStream.h"
 
@@ -58,8 +58,8 @@ struct DrainResult
   bool terminated = false;
 };
 
-//! Drive the chunker to completion, recording whether it ever posted more than one chunk per drain
-DrainResult drain(StreamChunker &chunker, CapturingEventQueue &queue)
+//! Drive the sender to completion, recording whether it ever posted more than one chunk per drain
+DrainResult drain(ClipboardSender &sender, CapturingEventQueue &queue)
 {
   // guards against a pump that never terminates
   constexpr size_t maxIterations = 100000;
@@ -68,8 +68,8 @@ DrainResult drain(StreamChunker &chunker, CapturingEventQueue &queue)
   for (size_t i = 0; i < maxIterations; ++i) {
     const size_t before = queue.m_captured.size();
     // the proxy writes the posted chunk, then the socket drains
-    chunker.onChunkWritten();
-    chunker.onStreamFlushed();
+    sender.onChunkWritten();
+    sender.onStreamFlushed();
     const size_t posted = queue.m_captured.size() - before;
 
     if (posted == 0) {
@@ -77,7 +77,7 @@ DrainResult drain(StreamChunker &chunker, CapturingEventQueue &queue)
       break;
     }
 
-    // the whole point of the chunker: never more than one chunk in flight
+    // the whole point of the sender: never more than one chunk in flight
     if (posted != 1) {
       result.onePerPump = false;
       break;
@@ -200,18 +200,18 @@ synchronous loop, so a large clipboard put the whole transfer in front of any
 input event and keep-alive reply that followed it.  Starting a transfer must
 post exactly one chunk.
 */
-void StreamChunkerTests::initTestCase()
+void ClipboardSenderTests::initTestCase()
 {
   // clipboard sends report to the GUI over IPC, which needs a server instance; it never listens
   new deskflow::core::ipc::CoreIpcServer(this);
 }
 
-void StreamChunkerTests::sendClipboardPostsOnlyFirstChunk()
+void ClipboardSenderTests::sendClipboardPostsOnlyFirstChunk()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(makeData(s_largeSize), 0, 0);
+  sender.sendClipboard(makeData(s_largeSize), 0, 0);
 
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
   QCOMPARE(queue.m_captured.front().mark, static_cast<uint8_t>(ChunkType::DataStart));
@@ -225,45 +225,45 @@ event loop outrun the network: every chunk lands in the socket's unbounded
 output buffer within a few loop iterations, and input written after them waits
 for all of it to drain.  The next chunk must wait for StreamOutputFlushed.
 */
-void StreamChunkerTests::nextChunkWaitsForStreamFlush()
+void ClipboardSenderTests::nextChunkWaitsForStreamFlush()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(makeData(s_largeSize), 0, 0);
+  sender.sendClipboard(makeData(s_largeSize), 0, 0);
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
 
   // written, but the link has not drained yet: nothing more may be queued
-  chunker.onChunkWritten();
+  sender.onChunkWritten();
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
 
-  chunker.onStreamFlushed();
+  sender.onStreamFlushed();
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(2));
 }
 
-void StreamChunkerTests::staleFlushWhileChunkInFlightIsIgnored()
+void ClipboardSenderTests::staleFlushWhileChunkInFlightIsIgnored()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(makeData(s_largeSize), 0, 0);
+  sender.sendClipboard(makeData(s_largeSize), 0, 0);
 
   // a flush queued before the start chunk was written must not release another chunk
-  chunker.onStreamFlushed();
+  sender.onStreamFlushed();
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
 
-  chunker.onChunkWritten();
-  chunker.onStreamFlushed();
+  sender.onChunkWritten();
+  sender.onStreamFlushed();
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(2));
 }
 
-void StreamChunkerTests::chunksAreEmittedOneAtATime()
+void ClipboardSenderTests::chunksAreEmittedOneAtATime()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(makeData(s_largeSize), 0, 0);
-  const auto drained = drain(chunker, queue);
+  sender.sendClipboard(makeData(s_largeSize), 0, 0);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
   QVERIFY(drained.onePerPump);
   const auto &captured = drained.chunks;
@@ -287,14 +287,14 @@ void StreamChunkerTests::chunksAreEmittedOneAtATime()
   QVERIFY(captured[1].payload.size() < s_largeSize / 4);
 }
 
-void StreamChunkerTests::transferRoundTripsData()
+void ClipboardSenderTests::transferRoundTripsData()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
   const std::string data = makeData(s_largeSize + 7); // deliberately not a chunk multiple
-  chunker.sendClipboard(data, 1, 42);
-  const auto drained = drain(chunker, queue);
+  sender.sendClipboard(data, 1, 42);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
   QVERIFY(drained.onePerPump);
   const auto &captured = drained.chunks;
@@ -308,13 +308,13 @@ void StreamChunkerTests::transferRoundTripsData()
   }
 }
 
-void StreamChunkerTests::emptyClipboardSendsStartAndEnd()
+void ClipboardSenderTests::emptyClipboardSendsStartAndEnd()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(std::string(), 0, 0);
-  const auto drained = drain(chunker, queue);
+  sender.sendClipboard(std::string(), 0, 0);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
   const auto &captured = drained.chunks;
 
@@ -324,20 +324,20 @@ void StreamChunkerTests::emptyClipboardSendsStartAndEnd()
   QCOMPARE(captured.back().mark, static_cast<uint8_t>(ChunkType::DataEnd));
 }
 
-void StreamChunkerTests::queuedTransfersDoNotInterleave()
+void ClipboardSenderTests::queuedTransfersDoNotInterleave()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
   const std::string first = makeData(s_largeSize);
   const std::string second = makeData(2048);
-  chunker.sendClipboard(first, 0, 1);
-  chunker.sendClipboard(second, 1, 2);
+  sender.sendClipboard(first, 0, 1);
+  sender.sendClipboard(second, 1, 2);
 
   // the second transfer must not start before the first one has finished
   QCOMPARE(queue.m_captured.size(), static_cast<size_t>(1));
 
-  const auto drained = drain(chunker, queue);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
   QVERIFY(drained.onePerPump);
   const auto &captured = drained.chunks;
@@ -366,18 +366,18 @@ void StreamChunkerTests::queuedTransfersDoNotInterleave()
   QCOMPARE(secondData, second);
 }
 
-void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
+void ClipboardSenderTests::newerCopySupersedesQueuedTransfer()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
   // clipboard 0 is on the wire; clipboard 1 is copied three times meanwhile
-  chunker.sendClipboard(makeData(s_largeSize), 0, 1);
-  chunker.sendClipboard(std::string("first"), 1, 2);
-  chunker.sendClipboard(std::string("second"), 1, 3);
-  chunker.sendClipboard(std::string("third"), 1, 4);
+  sender.sendClipboard(makeData(s_largeSize), 0, 1);
+  sender.sendClipboard(std::string("first"), 1, 2);
+  sender.sendClipboard(std::string("second"), 1, 3);
+  sender.sendClipboard(std::string("third"), 1, 4);
 
-  const auto drained = drain(chunker, queue);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
 
   size_t clipboardOneStarts = 0;
@@ -400,20 +400,20 @@ void StreamChunkerTests::newerCopySupersedesQueuedTransfer()
   QCOMPARE(clipboardOneSequence, static_cast<uint32_t>(4));
 }
 
-void StreamChunkerTests::newerCopyRestartsTransferOnTheWire()
+void ClipboardSenderTests::newerCopyRestartsTransferOnTheWire()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
   // clipboard 0 is part way through a large transfer when it's copied again
-  chunker.sendClipboard(makeData(s_largeSize), 0, 1);
+  sender.sendClipboard(makeData(s_largeSize), 0, 1);
   for (int i = 0; i < 3; ++i) {
-    chunker.onChunkWritten();
-    chunker.onStreamFlushed();
+    sender.onChunkWritten();
+    sender.onStreamFlushed();
   }
-  chunker.sendClipboard(std::string("newer"), 0, 2);
+  sender.sendClipboard(std::string("newer"), 0, 2);
 
-  const auto drained = drain(chunker, queue);
+  const auto drained = drain(sender, queue);
   QVERIFY(drained.terminated);
   QVERIFY(drained.onePerPump);
 
@@ -448,34 +448,34 @@ void StreamChunkerTests::newerCopyRestartsTransferOnTheWire()
   QVERIFY(largeBytes < s_largeSize);
 }
 
-void StreamChunkerTests::cancelStopsTransfer()
+void ClipboardSenderTests::cancelStopsTransfer()
 {
   CapturingEventQueue queue;
-  StreamChunker chunker(&queue, nullptr, {});
+  ClipboardSender sender(&queue, nullptr, {});
 
-  chunker.sendClipboard(makeData(s_largeSize), 0, 0);
-  chunker.onChunkWritten();
-  chunker.onStreamFlushed();
+  sender.sendClipboard(makeData(s_largeSize), 0, 0);
+  sender.onChunkWritten();
+  sender.onStreamFlushed();
   const size_t beforeCancel = queue.m_captured.size();
 
-  chunker.cancel();
-  chunker.onChunkWritten();
-  chunker.onStreamFlushed();
+  sender.cancel();
+  sender.onChunkWritten();
+  sender.onStreamFlushed();
 
   QCOMPARE(queue.m_captured.size(), beforeCancel);
 }
 
-void StreamChunkerTests::sendRemainingWritesInFlightChunkFirst()
+void ClipboardSenderTests::sendRemainingWritesInFlightChunkFirst()
 {
   HoldingEventQueue queue;
-  StreamChunker chunker(&queue, this, {});
+  ClipboardSender sender(&queue, this, {});
   const std::string data(70000, 'x');
 
-  chunker.sendClipboard(data, 0, 7);
+  sender.sendClipboard(data, 0, 7);
   QCOMPARE(queue.m_events.size(), size_t{1});
 
   BufferWriteStream written;
-  chunker.sendRemaining(&written);
+  sender.sendRemaining(&written);
 
   // the posted start chunk, then every data chunk and the end, in order
   BufferWriteStream expected;
@@ -487,22 +487,22 @@ void StreamChunkerTests::sendRemainingWritesInFlightChunkFirst()
   QCOMPARE(written.str(), expected.str());
 
   // the already-written start chunk's event is skipped once, and nothing more is posted
-  QVERIFY(chunker.takeSkippedChunk());
-  QVERIFY(!chunker.takeSkippedChunk());
-  chunker.onStreamFlushed();
+  QVERIFY(sender.takeSkippedChunk());
+  QVERIFY(!sender.takeSkippedChunk());
+  sender.onStreamFlushed();
   QCOMPARE(queue.m_events.size(), size_t{1});
 }
 
-void StreamChunkerTests::sendRemainingWithNothingQueuedWritesNothing()
+void ClipboardSenderTests::sendRemainingWithNothingQueuedWritesNothing()
 {
   HoldingEventQueue queue;
-  StreamChunker chunker(&queue, this, {});
+  ClipboardSender sender(&queue, this, {});
 
   BufferWriteStream written;
-  chunker.sendRemaining(&written);
+  sender.sendRemaining(&written);
 
   QVERIFY(written.str().empty());
-  QVERIFY(!chunker.takeSkippedChunk());
+  QVERIFY(!sender.takeSkippedChunk());
 }
 
-QTEST_MAIN(StreamChunkerTests)
+QTEST_MAIN(ClipboardSenderTests)

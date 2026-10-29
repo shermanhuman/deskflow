@@ -39,16 +39,16 @@ enough: the event loop turns far faster than a slow link drains, so chunks would
 still pile up in the socket's output buffer ahead of any input written after
 them.  Waiting for the drain bounds that buffer to roughly one chunk.
 */
-class StreamChunker
+class ClipboardSender
 {
 public:
-  StreamChunker(IEventQueue *events, void *eventTarget, const QString &peerName);
-  ~StreamChunker();
+  ClipboardSender(IEventQueue *events, void *eventTarget, const QString &peerName);
+  ~ClipboardSender();
 
-  StreamChunker(StreamChunker const &) = delete;
-  StreamChunker(StreamChunker &&) = delete;
-  StreamChunker &operator=(StreamChunker const &) = delete;
-  StreamChunker &operator=(StreamChunker &&) = delete;
+  ClipboardSender(ClipboardSender const &) = delete;
+  ClipboardSender(ClipboardSender &&) = delete;
+  ClipboardSender &operator=(ClipboardSender const &) = delete;
+  ClipboardSender &operator=(ClipboardSender &&) = delete;
 
   //! Queue clipboard data for transmission
   /*!
